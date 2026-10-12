@@ -1,0 +1,126 @@
+The Self-Healing LLM Gateway project is about building a system that makes AI applications more reliable by automatically detecting failures in Large Language Model (LLM) providers and switching to a working alternative.
+The main motive is to demonstrate that you can build and operate AI infrastructure, not just train machine learning models or call an LLM API.
+1. Why do we need this project?
+Imagine you build an AI chatbot using GPT. Your application sends every question to an LLM provider.
+User asks a question
+"Explain how transformers work."
+
+
+Your AI application
+Sends the request to the LLM API
+
+
+Provider A — GPT
+API timeout or service unavailable
+
+Failed
+
+
+Provider B — another LLM
+Receives the retried request
+
+Fallback
+
+
+
+User receives an answer
+Without manually restarting or changing the application
+
+
+Without a gateway, your application might return an error whenever its chosen provider fails.
+With a self-healing gateway, it can detect the problem, retry intelligently, and redirect the request to another provider or model when appropriate.
+Note: This works only if a suitable fallback provider is configured and available. The fallback may have different response quality, latency, or cost.
+2. What does “Self-Healing” actually mean?
+It means the system can respond automatically to certain failures instead of requiring a developer to intervene every time.
+For example:
+- Failure detection: Identify timeouts, rate limits, server errors, or unavailable providers.
+- Automatic recovery: Retry transient failures or switch to a backup model.
+- Health monitoring: Track which providers are healthy, slow, or failing.
+- Observability: Record errors, latency, request counts, and fallback events.
+- Performance improvement: Use the collected metrics to understand bottlenecks and reliability.
+It doesn't mean the AI repairs its own code. It means the gateway automatically recovers from predefined operational problems.
+3. What is the purpose of each technology?
+
+Python
+Implements the routing logic, failure handling, retries, and recovery policies.
+
+
+
+
+LiteLLM
+Provides a unified interface for calling different LLM providers and supports routing and fallback configurations.
+
+
+
+
+FastAPI
+Exposes your gateway as an HTTP API that chatbots and other applications can call.
+
+
+
+
+Redis
+Stores fast-changing state, such as provider health, temporary failure counts, and cooldown information.
+
+
+
+
+Prometheus
+Collects numerical metrics, such as request volume, error rates, latency, and fallback frequency.
+
+
+
+
+Grafana
+Displays the metrics in dashboards so you can monitor and demonstrate the system's behavior.
+
+
+
+4. What would you actually build?
+Suppose your gateway supports two configured models:
+- Primary: model-A
+- Backup: model-B
+You send 100 requests to the gateway. Normally, model A handles the requests. Then you deliberately simulate a failure.
+Example live demonstration
+Primary provider
+Healthy
+
+
+
+Before failure: requests are served by the primary model.
+
+Primary provider
+Unavailable
+
+
+
+Backup provider
+Handling requests
+
+
+
+After failure: the gateway routes eligible requests to the backup, while Grafana shows the provider errors and fallback activity.
+
+The percentages above are illustrative, not measured results. Actual traffic distribution depends on your routing strategy and how you simulate failure.
+Your demo would show three things:
+1. Send prompts through your FastAPI endpoint.
+2. Make the primary provider fail, or simulate a timeout.
+3. Watch the gateway recover and Grafana show the failure and fallback metrics.
+That's much more convincing than simply showing a notebook where an LLM generates a response.
+5. Why is this valuable for your AI career?
+Given your goal of moving toward software-oriented AI roles, this project can demonstrate skills beyond model training.
+Skill demonstrated	What employers can see
+LLM engineering	You understand multi-provider LLM integration
+Backend development	You can build APIs with Python and FastAPI
+Reliability engineering	You understand retries, timeouts, fallbacks, and failure recovery
+Distributed systems basics	You can use Redis for shared operational state
+Observability	You can measure and visualize production behavior
+DevOps / LLMOps	You can test, monitor, and operate an AI service
+This is relevant to roles such as LLM Engineer, AI Infrastructure Engineer, MLOps Engineer, AI Platform Engineer, and backend engineer working on AI products.
+6. What is the ultimate motive?
+Think of the difference this way:
+- A typical AI project answers: Can I build an application that uses an LLM?
+- This project answers: Can I build an LLM service that remains usable when parts of its infrastructure fail, and can I prove that it works?
+
+TODO
+TODO is just a comment marking a spot where code still needs to be written. It isn’t a Python command, and Python ignores it like any other comment.
