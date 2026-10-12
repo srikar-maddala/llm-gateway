@@ -2,15 +2,21 @@ from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI
 from litellm import acompletion
-from pydantic import BaseModel
+from pydantic import BaseModel,Field
 
 app=FastAPI()
 class Message(BaseModel):
     role:str
     content:str
+
+class Metadata(BaseModel):
+    tenant: str = Field(min_length=1)
+    feature: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
 class ChatRequest(BaseModel):
     model:str
     messages:list[Message]   
+    metadata:Metadata
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -25,6 +31,7 @@ def health():
 # and that data travels in the request body. Request bodies go with POST, not GET.
 @app.post('/v1/chat/completions')
 async def chat_completions(req:ChatRequest):
+    print(f"tenant={req.metadata.tenant} feature={req.metadata.feature} request_id={req.metadata.request_id}")
     messages=[m.model_dump() for m in req.messages]
     # messages = []
     # for m in req.messages:
@@ -32,4 +39,5 @@ async def chat_completions(req:ChatRequest):
     #messages.append(m.model_dump()) converts m into a dictionary with .model_dump() and adds it to the list.
     api_base = "http://localhost:11434" if req.model.startswith("ollama/") else None
     response = await acompletion(model=req.model, messages=messages, api_base=api_base)
+    
     return response
