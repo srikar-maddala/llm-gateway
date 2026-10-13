@@ -1,0 +1,13 @@
+models:
+  fast:
+    provider: groq
+    litellm_model: groq/openai/gpt-oss-20b
+
+  smart:
+    provider: openai
+    litellm_model: openai/gpt-4o-mini
+
+  local:
+    provider: ollama
+    litellm_model: ollama/llama3.2
+    api_base: http://localhost:11434

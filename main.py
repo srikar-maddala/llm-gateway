@@ -1,10 +1,14 @@
 from dotenv import load_dotenv
+import yaml
+from fastapi import FastAPI, HTTPException
 load_dotenv()
-from fastapi import FastAPI
 from litellm import acompletion
 from pydantic import BaseModel,Field
 
 app=FastAPI()
+with open("config.yaml") as f:
+    CONFIG = yaml.safe_load(f)
+MODELS = CONFIG["models"]
 class Message(BaseModel):
     role:str
     content:str
@@ -21,8 +25,7 @@ class ChatRequest(BaseModel):
 def health():
     return {"status": "ok"}
 
-#
-@app.post('/v1/chat/completions')
+
 #/v1 means version 1 of the API 
 #/chat/completions means 'complete this chat' , that is generate the next reply
 #Why Post
@@ -32,12 +35,15 @@ def health():
 @app.post('/v1/chat/completions')
 async def chat_completions(req:ChatRequest):
     print(f"tenant={req.metadata.tenant} feature={req.metadata.feature} request_id={req.metadata.request_id}")
+    cfg=MODELS.get(req.model)
+    if cfg is None:
+        raise HTTPException(status_code=400,detail=f"Unknown model '{req.model}'. Available: {list(MODELS)}")
     messages=[m.model_dump() for m in req.messages]
     # messages = []
     # for m in req.messages:
     #     messages.append(m.model_dump())
     #messages.append(m.model_dump()) converts m into a dictionary with .model_dump() and adds it to the list.
-    api_base = "http://localhost:11434" if req.model.startswith("ollama/") else None
-    response = await acompletion(model=req.model, messages=messages, api_base=api_base)
+    
+    response = await acompletion(model=cfg['litellm_model'], messages=messages, api_base=cfg.get('api_base'))
     
     return response
