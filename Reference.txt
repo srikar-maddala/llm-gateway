@@ -124,3 +124,34 @@ Think of the difference this way:
 
 TODO
 TODO is just a comment marking a spot where code still needs to be written. It isn’t a Python command, and Python ignores it like any other comment.
+
+
+PART----------->4
+tenant: which team or customer is calling, for example "support-team"
+feature: which part of their product, for example "chatbot"
+request_id: a unique ID for this one request, for tracing it in logs
+
+
+step:06 in Phase 1:
+1. Stopwatch: time the provider call → latency.
+2.Record: collect labels, latency, tokens, and cost into one dictionary and print it as JSON.
+3.Safety net: if the provider fails, still log the request (with status: error), and return a clear 502 instead of crashing with a 500, like you saw on Tuesday.
+
+piece:02 is the Record
+
+
+PHASE:02
+Redis:Is a very fast base database that keeps data in memory. Our gate way use it to count each provider 
+success and failures over the last minute.Its used instead of python variable beacuse numbers served
+a server restart and later gateway copies can share same counts.
+docker run -d --name redis -p 6379:6379 redis:7
+-d runs it in the background.
+--name redis gives the container a name so you can stop and start it later.
+-p 6379:6379 makes Redis reachable on your machine at port 6379, its standard port.
+redis:7 is the Redis image, which Docker downloads the first time.
+
+##we use decode_responses so it converts our output from raw bytes to string
+
+r.incr("counter")
+is nothing but short increment of adding 1 to number stored in the key here our key value is "counter"
+so this key value pair is stored in redis when you 

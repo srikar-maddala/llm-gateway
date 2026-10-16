@@ -1,6 +1,6 @@
 import json
 import time
-
+from errors import classify_error
 import yaml
 from dotenv import load_dotenv
 
@@ -74,6 +74,7 @@ async def chat_completions(req: ChatRequest):
     except Exception as exc:
         record["status"] = "error"
         record["error_type"] = type(exc).__name__
+        record["error_category"] = classify_error(exc)
         record["latency_ms"] = round((time.perf_counter() - start) * 1000)
         print(json.dumps(record))
         raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}")
