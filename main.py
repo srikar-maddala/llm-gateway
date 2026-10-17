@@ -3,7 +3,7 @@ import time
 from errors import classify_error
 import yaml
 from dotenv import load_dotenv
-from health import record_result,get_health
+from health import record_result,get_health,record_latency,get_health
 
 load_dotenv()
 
@@ -84,6 +84,7 @@ async def chat_completions(req: ChatRequest):
     record["latency_ms"] = round((time.perf_counter() - start) * 1000)       # moved up
     record["status"] = "ok"
     await record_result(cfg["provider"], ok=True)
+    await record_latency(cfg["provider"],record["latency_ms"])
     record["latency_ms"] = round((time.perf_counter() - start) * 1000)
     record["input_tokens"] = response.usage.prompt_tokens
     record["output_tokens"] = response.usage.completion_tokens

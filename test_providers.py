@@ -34,7 +34,11 @@ def main():
         latency_ms = round((time.perf_counter() - start) * 1000)
 
         if resp.status_code != 200:
-            print(f"{alias:<8}{resp.status_code:<8}{latency_ms:<12}{'-':<11}{'-':<11}{resp.json().get('detail', '')[:50]}")
+            try:
+                detail = resp.json().get("detail", "")
+            except ValueError:
+                detail = resp.text  # not JSON, e.g. a plain "Internal Server Error"
+            print(f"{alias:<8}{resp.status_code:<8}{latency_ms:<12}{'-':<11}{'-':<11}{str(detail)[:50]}")
             continue
 
         data = resp.json()
