@@ -3,6 +3,7 @@ import time
 from errors import classify_error
 import yaml
 from dotenv import load_dotenv
+from health import record_result,get_health
 
 load_dotenv()
 
@@ -72,15 +73,17 @@ async def chat_completions(req: ChatRequest):
             api_base=cfg.get("api_base"),
         )
     except Exception as exc:
+        record["latency_ms"] = round((time.perf_counter() - start) * 1000)   # moved up
         record["status"] = "error"
         record["error_type"] = type(exc).__name__
         record["error_category"] = classify_error(exc)
-        record["latency_ms"] = round((time.perf_counter() - start) * 1000)
+        await record_result(cfg["provider"], ok=False, category=record["error_category"])
         print(json.dumps(record))
         raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}")
 
-    # 5. Success: add latency, tokens, and cost to the record.
+    record["latency_ms"] = round((time.perf_counter() - start) * 1000)       # moved up
     record["status"] = "ok"
+    await record_result(cfg["provider"], ok=True)
     record["latency_ms"] = round((time.perf_counter() - start) * 1000)
     record["input_tokens"] = response.usage.prompt_tokens
     record["output_tokens"] = response.usage.completion_tokens
@@ -92,3 +95,8 @@ async def chat_completions(req: ChatRequest):
     # 6. One JSON line per request in the server terminal.
     print(json.dumps(record))
     return response
+
+@app.get("/providers/health")
+async def providers_health():
+    providers=sorted({cfg["provider"] for cfg in MODELS.values()})
+    return [await get_health(p) for p in providers]

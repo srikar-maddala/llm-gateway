@@ -1,3 +1,10 @@
+"""Sort provider errors into categories the gateway can act on."""
+
+# Categories that mean "the provider itself is having trouble".
+# health.py only counts these as failures.
+PROVIDER_FAULTS = {"rate_limit", "timeout", "server_error", "connection_error"}
+
+
 def classify_error(exc: Exception) -> str:
     """Return a category name for an exception raised by LiteLLM."""
     # Names of this error's class and every class it inherits from,
