@@ -1,9 +1,8 @@
 import json
 import time
-from errors import classify_error
+
 import yaml
 from dotenv import load_dotenv
-from health import record_result,get_health,record_latency,get_health
 
 load_dotenv()
 
@@ -11,10 +10,13 @@ from fastapi import FastAPI, HTTPException
 from litellm import acompletion, completion_cost
 from pydantic import BaseModel, Field
 
+from errors import classify_error
+from health import get_health, record_latency, record_result
+
 app = FastAPI()
 
 # Read config.yaml once, when the server starts.
-# MODELS maps each alias (fast, smart, local) to its real provider model.
+# MODELS maps each alias (fast, smart, local) to its real provider model and fallbacks.
 with open("config.yaml") as f:
     CONFIG = yaml.safe_load(f)
 MODELS = CONFIG["models"]
@@ -61,43 +63,62 @@ async def chat_completions(req: ChatRequest):
         "tenant": req.metadata.tenant,
         "feature": req.metadata.feature,
         "model": req.model,
-        "provider": cfg["provider"],
     }
 
-    # 4. Call the provider, timing it. If the provider fails, log it and return 502.
-    start = time.perf_counter()
-    try:
-        response = await acompletion(
-            model=cfg["litellm_model"],
-            messages=messages,
-            api_base=cfg.get("api_base"),
-        )
-    except Exception as exc:
-        record["latency_ms"] = round((time.perf_counter() - start) * 1000)   # moved up
-        record["status"] = "error"
-        record["error_type"] = type(exc).__name__
-        record["error_category"] = classify_error(exc)
-        await record_result(cfg["provider"], ok=False, category=record["error_category"])
+    # 4. Try the requested alias first, then its fallbacks, in order.
+    chain = [req.model] + cfg.get("fallbacks", [])
+    attempts = []  # what happened at each failed step
+
+    for alias in chain:
+        step_cfg = MODELS[alias]
+        start = time.perf_counter()
+        try:
+            response = await acompletion(
+                model=step_cfg["litellm_model"],
+                messages=messages,
+                api_base=step_cfg.get("api_base"),
+            )
+        except Exception as exc:
+            latency_ms = round((time.perf_counter() - start) * 1000)
+            category = classify_error(exc)
+            await record_result(step_cfg["provider"], ok=False, category=category)
+            attempts.append({
+                "model": alias,
+                "provider": step_cfg["provider"],
+                "error_category": category,
+                "latency_ms": latency_ms,
+            })
+            if category == "bad_request":
+                break      # the client's request is invalid; another provider won't help
+            continue       # try the next alias in the chain
+
+        # 5. Success: record it and return the answer.
+        latency_ms = round((time.perf_counter() - start) * 1000)
+        await record_result(step_cfg["provider"], ok=True)
+        await record_latency(step_cfg["provider"], latency_ms)
+
+        record["status"] = "ok"
+        record["served_by"] = alias
+        record["provider"] = step_cfg["provider"]
+        record["latency_ms"] = latency_ms
+        record["attempts"] = attempts
+        record["input_tokens"] = response.usage.prompt_tokens
+        record["output_tokens"] = response.usage.completion_tokens
+        try:
+            record["cost_usd"] = round(completion_cost(completion_response=response), 6)
+        except Exception:
+            record["cost_usd"] = None  # LiteLLM has no price for this model
         print(json.dumps(record))
-        raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}")
+        return response
 
-    record["latency_ms"] = round((time.perf_counter() - start) * 1000)       # moved up
-    record["status"] = "ok"
-    await record_result(cfg["provider"], ok=True)
-    await record_latency(cfg["provider"],record["latency_ms"])
-    record["latency_ms"] = round((time.perf_counter() - start) * 1000)
-    record["input_tokens"] = response.usage.prompt_tokens
-    record["output_tokens"] = response.usage.completion_tokens
-    try:
-        record["cost_usd"] = round(completion_cost(completion_response=response), 6)
-    except Exception:
-        record["cost_usd"] = None  # LiteLLM has no price for this model
-
-    # 6. One JSON line per request in the server terminal.
+    # 6. Every alias in the chain failed.
+    record["status"] = "error"
+    record["attempts"] = attempts
     print(json.dumps(record))
-    return response
+    raise HTTPException(status_code=502, detail={"message": "All providers failed", "attempts": attempts})
+
 
 @app.get("/providers/health")
 async def providers_health():
-    providers=sorted({cfg["provider"] for cfg in MODELS.values()})
+    providers = sorted({cfg["provider"] for cfg in MODELS.values()})
     return [await get_health(p) for p in providers]
