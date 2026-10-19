@@ -6,12 +6,26 @@ import redis.asyncio as redis
 
 from errors import PROVIDER_FAULTS
 
-r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+r = redis.Redis(host="localhost", port=6379, decode_responses=True,
+                socket_connect_timeout=0.5 ,#give up connecting after 0.5 s
+                socket_timeout=0.5,) #give up waiting for a reply after 0.5s
 
 # Settings
 BUCKET_SECONDS = 60    # one counter per minute (one "page")
 WINDOW_MINUTES = 5     # health looks at the last 5 pages
 LATENCY_SAMPLES = 100  # keep the last 100 latencies per provider
+REDIS_RETRY_AFTER = 30.0   # after a Redis failure, skip it for this many seconds
+_redis_down_until = 0.0     # time until which we skip Redis
+
+def _redis_available() -> bool:
+    """False while we're waiting after a recent Redis failure."""
+    return time.monotonic() >= _redis_down_until
+
+def _mark_redis_down(exc: Exception) -> None:
+    """Remember that Redis failed, so we skip it for a while."""
+    global _redis_down_until
+    _redis_down_until = time.monotonic() + REDIS_RETRY_AFTER
+    print(f"WARNING: Redis unavailable, skipping it for {REDIS_RETRY_AFTER:.0f}s: {exc}")
 
 
 def _current_bucket() -> int:
@@ -38,16 +52,24 @@ async def record_result(provider: str, ok: bool, category: str | None = None) ->
         return  # not the provider's fault, so don't count it
 
     key = f"health:{provider}:{outcome}:{_current_bucket()}"
-    await r.incr(key)
-    await r.expire(key, WINDOW_MINUTES * 60)
+    try:
+        await r.incr(key)
+        await r.expire(key,WINDOW_MINUTES*60)
+    except (redis.RedisError,OSError) as exc:
+        print(f"WARNING:health tracking unavailable: {exc}")    
+    
 
 
 async def record_latency(provider: str, latency_ms: int) -> None:
     """Remember this request's latency; keep only the most recent ones."""
+    if not _redis_available():
+        return  # Redis failed recently; don't slow this request down
     key = f"latency:{provider}"
-    await r.lpush(key, latency_ms)               # add to the front of the list
-    await r.ltrim(key, 0, LATENCY_SAMPLES - 1)   # cut the list to 100 items
-
+    try:
+        await r.lpush(key, latency_ms)               # add to the front of the list
+        await r.ltrim(key, 0, LATENCY_SAMPLES - 1)   # cut the list to 100 items
+    except (redis.RedisError,OSError) as exc:
+        _mark_redis_down(exc)
 
 async def get_health(provider: str) -> dict:
     """Summarise this provider's recent successes, failures, and latency."""

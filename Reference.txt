@@ -155,3 +155,101 @@ redis:7 is the Redis image, which Docker downloads the first time.
 r.incr("counter")
 is nothing but short increment of adding 1 to number stored in the key here our key value is "counter"
 so this key value pair is stored in redis when you 
+
+r.incr("health:groq:success")   # Groq answered fine
+r.incr("health:groq:failure")   # Groq failed
+in future we will store the values in this way
+
+#############PHASE:02##############
+Step:01:Sorting errors into types
+Right now, when a provider fails, your record says something like "error_type": "NotFoundError". 
+That’s the raw class name. The gateway needs to know something more useful: what should I do about 
+this error? Different failures need different reactions:
+
+There are different actegories such as rate_limit , time_out , server_error, connection_error, auth_error,model_not-NotFoundError,bad_request,unknown
+
+The key insight: only some errors mean the provider is broken. 
+If a client sends a prompt that’s too long, that’s not Groq’s fault, and Groq shouldn’t be marked unhealthy for it. 
+Phase 3’s circuit breaker will count only the “provider is unhealthy” categories.
+
+isinstance(exc, X) is this error of type X (or a more specific kind of X)?”. LiteLLM converts 
+every provider’s own error format into a shared set of exception classes, which is why one function works for 
+Groq, OpenAI, and Ollama alike.
+
+Phase:02:step2:Health tarcking in Redis
+Goal: for each provider, the gateway keeps live counts of successes and failures in the last few minutes, 
+so it can answer “how healthy is Groq right now?”.
+How: one Redis counter per provider, per outcome, per minute:
+health:groq:success:29342817    → 14
+health:groq:failure:29342817    → 2
+
+time.time() gives the current time as seconds since 1 January 1970, 
+a big number like 1760630450. Dividing by 60 (and dropping the remainder) 
+gives the number of whole minutes since then:
+
+health:groq:success:29343842
+   │     │     │        └── which minute (page)
+   │     │     └── what happened
+   │     └── which provider
+   └── a prefix, so all health keys are grouped together
+
+   Say in the minute 29343842, Groq answered 14 requests fine and failed 2:
+   health:groq:success:29343842  → 14
+health:groq:failure:29343842  → 2
+
+
+Done in Phase 2: Redis set up, error categories, live health tracking per provider.
+
+Remaining in Phase 2: the failure test (5 minutes), latency percentiles, and the /metrics endpoint.
+
+step3:latency penalties
+Why not just the average? Imagine 10 requests: nine take 500 ms and one takes 30 seconds. 
+The average is about 3.4 seconds, which describes none of them: most users waited half a second, 
+one waited 30. Percentiles describe it honestly:
+p50 (median): half the requests were faster than this. “The typical experience.” Here, 500 ms.
+p95: 95% were faster than this; only the slowest 5% were worse. 
+“The bad-but-not-rare experience.” It catches the slow tail that averages hide.
+************
+We will be keeping track of 100 latencies if it exceeds the latency count new ones will be cut off
+
+
+LiteLLM converts every provider’s reply into the same OpenAI-style format, so this code works for any provider:
+
+Phase:03:Circuit breakers and failover
+
+Step	What	Why
+1	Fail-safe health tracking	Redis trouble must never break user requests (Saturday’s lesson)
+2	Fallback chain	Each alias lists backup providers to try in order
+3	Circuit breaker	Skip providers that are clearly broken, without waiting for each request to fail
+4	One quick retry	Ride out brief blips before failing over
+5	Chaos test	Break a provider on purpose and watch traffic reroute
+
+*********************************************88
+Step 1: make health tracking fail safely
+
+The problem you saw on Saturday: when Redis wasn’t running, every request hung for about 50 seconds and 
+then crashed, 
+even though Groq was fine. Health tracking is a helper; it should never be able to take down the main job.
+
+Here we are inserrting inside health.python
+which is for 
+r = redis.Redis(
+    host="localhost",
+    port=6379,
+    decode_responses=True,
+    socket_connect_timeout=0.5,  # give up connecting after 0.5 s
+    socket_timeout=0.5,          # give up waiting for a reply after 0.5 s
+)
+
+2.Catch redis error in two writing functions , so a failure is logged and skipped instead of crashing the request.
+Wrap their bodies in try/except:
+
+**we are adding  for record_result in health.py
+except (redis.RedisError, OSError) as exc:
+        print(f"WARNING: health tracking unavailable: {exc}")
+
+**also we add it in record-latency also 
+except (redis.RedisError,OSError) as exc:
+        print(f"WARNING:latency tracking unavilable: {exc}")
+
+they do nothing but failure will be skipped if it comes out from redis rather than crashing out
