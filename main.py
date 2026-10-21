@@ -10,11 +10,9 @@ from fastapi import FastAPI, HTTPException
 from litellm import acompletion, completion_cost
 from pydantic import BaseModel, Field
 
-from errors import classify_error
-from health import get_health, record_latency, record_result
-
 from breaker import is_open, maybe_trip
-from errors import PROVIDER_FAULTS, classify_error
+from errors import PROVIDER_FAULTS, classify_error   # CHANGED: one import line instead of two
+from health import get_health, record_latency, record_result
 
 app = FastAPI()
 
@@ -85,6 +83,7 @@ async def chat_completions(req: ChatRequest):
                 "latency_ms": 0,
             })
             continue
+
         start = time.perf_counter()
         try:
             response = await acompletion(
@@ -94,28 +93,28 @@ async def chat_completions(req: ChatRequest):
             )
         except Exception as exc:
             latency_ms = round((time.perf_counter() - start) * 1000)
-            category = classify_error(exc)                         # 1. what kind of error?
-            await record_result(provider, ok=False, category=category)  # 2. count it
-            if category in PROVIDER_FAULTS:                        # 3. maybe open the breaker
+            category = classify_error(exc)                              # what kind of error?
+            await record_result(provider, ok=False, category=category)  # count it
+            if category in PROVIDER_FAULTS:                             # maybe open the breaker
                 await maybe_trip(provider)
-            attempts.append({                                      # 4. note it in the log
+            attempts.append({                                           # note it in the log
                 "model": alias,
                 "provider": provider,
                 "error_category": category,
                 "latency_ms": latency_ms,
             })
-            if category == "bad_request":                          # 5. client's fault: stop
+            if category == "bad_request":                               # client's fault: stop
                 break
-            continue                                               # 6. try the next provider
+            continue                                                    # try the next provider
 
         # 5. Success: record it and return the answer.
         latency_ms = round((time.perf_counter() - start) * 1000)
-        await record_result(step_cfg["provider"], ok=True)
-        await record_latency(step_cfg["provider"], latency_ms)
+        await record_result(provider, ok=True)
+        await record_latency(provider, latency_ms)
 
         record["status"] = "ok"
         record["served_by"] = alias
-        record["provider"] = step_cfg["provider"]
+        record["provider"] = provider
         record["latency_ms"] = latency_ms
         record["attempts"] = attempts
         record["input_tokens"] = response.usage.prompt_tokens
@@ -125,7 +124,17 @@ async def chat_completions(req: ChatRequest):
         except Exception:
             record["cost_usd"] = None  # LiteLLM has no price for this model
         print(json.dumps(record))
-        return response
+
+        # CHANGED: return the normal response PLUS a "gateway" section,
+        # so the caller can see who actually answered and what failed first.
+        body = response.model_dump()
+        body["gateway"] = {
+            "served_by": alias,
+            "provider": provider,
+            "latency_ms": latency_ms,
+            "attempts": attempts,
+        }
+        return body
 
     # 6. Every alias in the chain failed.
     record["status"] = "error"
@@ -137,7 +146,7 @@ async def chat_completions(req: ChatRequest):
 @app.get("/providers/health")
 async def providers_health():
     providers = sorted({cfg["provider"] for cfg in MODELS.values()})
-    result=[]
+    result = []
     for p in providers:
         h = await get_health(p)
         h["circuit"] = "open" if await is_open(p) else "closed"

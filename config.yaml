@@ -2,13 +2,14 @@ models:
   fast:
     provider: groq
     litellm_model: groq/openai/gpt-oss-20b
-    # api_base: http://localhost:9999b
+    
     fallbacks : [smart,local]
 
 
   smart:
     provider: openai
     litellm_model: openai/gpt-4o-mini
+    
     fallbacks : [fast,local]
 
   local:
