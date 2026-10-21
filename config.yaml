@@ -1,8 +1,8 @@
 models:
   fast:
     provider: groq
-    # litellm_model: groq/openai/gpt-oss-20b
-    litellm_model: groq/does-not-exist
+    litellm_model: groq/openai/gpt-oss-20b
+    # api_base: http://localhost:9999b
     fallbacks : [smart,local]
 
 
