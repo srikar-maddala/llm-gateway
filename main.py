@@ -7,12 +7,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response                            # NEW
 from litellm import acompletion, completion_cost
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # NEW
 from pydantic import BaseModel, Field
 
 from breaker import is_open, maybe_trip
-from errors import PROVIDER_FAULTS, classify_error   # CHANGED: one import line instead of two
+from errors import PROVIDER_FAULTS, classify_error
 from health import get_health, record_latency, record_result
+from metrics import CIRCUIT_OPEN, COST, LATENCY, PROVIDER_ATTEMPTS, REQUESTS  # NEW
 
 app = FastAPI()
 
@@ -82,6 +85,7 @@ async def chat_completions(req: ChatRequest):
                 "error_category": "circuit_open",
                 "latency_ms": 0,
             })
+            PROVIDER_ATTEMPTS.labels(provider=provider, outcome="circuit_open").inc()  # NEW
             continue
 
         start = time.perf_counter()
@@ -94,6 +98,7 @@ async def chat_completions(req: ChatRequest):
         except Exception as exc:
             latency_ms = round((time.perf_counter() - start) * 1000)
             category = classify_error(exc)                              # what kind of error?
+            PROVIDER_ATTEMPTS.labels(provider=provider, outcome=category).inc()  # NEW
             await record_result(provider, ok=False, category=category)  # count it
             if category in PROVIDER_FAULTS:                             # maybe open the breaker
                 await maybe_trip(provider)
@@ -125,7 +130,18 @@ async def chat_completions(req: ChatRequest):
             record["cost_usd"] = None  # LiteLLM has no price for this model
         print(json.dumps(record))
 
-        # CHANGED: return the normal response PLUS a "gateway" section,
+        # NEW: update Prometheus metrics for this successful request
+        PROVIDER_ATTEMPTS.labels(provider=provider, outcome="ok").inc()
+        LATENCY.labels(provider=provider).observe(latency_ms / 1000)   # seconds
+        REQUESTS.labels(model=req.model, served_by=alias, status="ok").inc()
+        if record["cost_usd"]:                                         # skip None and 0.0
+            COST.labels(
+                tenant=req.metadata.tenant,
+                feature=req.metadata.feature,
+                provider=provider,
+            ).inc(record["cost_usd"])
+
+        # Return the normal response PLUS a "gateway" section,
         # so the caller can see who actually answered and what failed first.
         body = response.model_dump()
         body["gateway"] = {
@@ -140,6 +156,7 @@ async def chat_completions(req: ChatRequest):
     record["status"] = "error"
     record["attempts"] = attempts
     print(json.dumps(record))
+    REQUESTS.labels(model=req.model, served_by="none", status="error").inc()  # NEW
     raise HTTPException(status_code=502, detail={"message": "All providers failed", "attempts": attempts})
 
 
@@ -152,3 +169,12 @@ async def providers_health():
         h["circuit"] = "open" if await is_open(p) else "closed"
         result.append(h)
     return result
+
+
+# NEW: the page Prometheus reads every few seconds
+@app.get("/metrics")
+async def metrics():
+    # Refresh breaker state right before Prometheus reads it.
+    for p in sorted({cfg["provider"] for cfg in MODELS.values()}):
+        CIRCUIT_OPEN.labels(provider=p).set(1 if await is_open(p) else 0)
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
