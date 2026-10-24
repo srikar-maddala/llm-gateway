@@ -1,14 +1,17 @@
 """Track each provider's recent health and latency in Redis."""
 
 import time
+import os
 
 import redis.asyncio as redis
 
 from errors import PROVIDER_FAULTS
 
-r = redis.Redis(host="localhost", port=6379, decode_responses=True,
-                socket_connect_timeout=0.5 ,#give up connecting after 0.5 s
-                socket_timeout=0.5,) #give up waiting for a reply after 0.5s
+r = redis.Redis(host=os.getenv("REDIS_HOST", "localhost"),
+    port=6379,
+    decode_responses=True,
+    socket_connect_timeout=0.5,
+    socket_timeout=0.5,) #give up waiting for a reply after 0.5s
 
 # Settings
 BUCKET_SECONDS = 60    # one counter per minute (one "page")

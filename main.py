@@ -1,6 +1,6 @@
 import json
 import time
-
+import os
 import yaml
 from dotenv import load_dotenv
 
@@ -25,7 +25,13 @@ with open("config.yaml") as f:
     CONFIG = yaml.safe_load(f)
 MODELS = CONFIG["models"]
 
-
+# Inside Docker, Ollama on your PC is reached at host.docker.internal, not localhost.
+OLLAMA_API_BASE = os.getenv("OLLAMA_API_BASE")
+if OLLAMA_API_BASE:
+    for model_cfg in MODELS.values():
+        if model_cfg["provider"] == "ollama":
+            model_cfg["api_base"] = OLLAMA_API_BASE
+            
 class Message(BaseModel):
     role: str
     content: str

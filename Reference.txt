@@ -343,3 +343,65 @@ Scenario                        what we break            w              hat we e
 2.Groq down                     Groq                                                    100 percent answers served by OpenAI
 3.Groq+OpenAI down              two providers                                           100% answered, served by Ollama (slower)
 4.Everything down               all three                                                quick 502 errors
+
+
+###Create chaos_test.py
+Goal of Phase 5: a Grafana dashboard that shows how the gateway behaves over time: 
+requests, errors, latency, cost, and breaker state for each provider.
+
+##############################3
+Next is Phase 5, Step 2: run the gateway and Redis with Docker Compose. 
+Prometheus and Grafana come in Step 3; first we need the gateway itself running in Docker.
+For someone else it’s even worse: they’d need Python 3.13, 
+
+a virtual environment, all the packages, Redis... and tomorrow we add Prometheus and Grafana, 
+which makes six things to install and start.
+
+What Docker Compose fixes
+
+One file describes the whole system; one command starts it:
+It’s what reviewers expect. A GitHub project where you git clone and docker compose up looks professional. 
+It’s also the base for deploying later, since cloud services run containers.
+
+Why do it now, before Prometheus
+
+One new thing at a time. If we added the gateway, Redis, Prometheus and Grafana to Docker in one go and something failed, you wouldn’t know which part caused it. So:
+
+Step 2: gateway + Redis in Docker → test it works
+Step 3: add Prometheus + Grafana → if something breaks, it’s in the new part
+
+
+###############
+DockerFile:
+FROM python:3.13-slim
+Start from a small Linux system that already has Python 3.13, the same version you use on Windows. slim means a smaller download without extra tools.
+Why: we don’t install Linux or Python ourselves; we start from a ready-made base.
+
+2)WORKDIR /app
+Create a folder /app inside the container and work there. All the following commands run in /app.
+Why: it’s like cd LLM_Gateway. Your code gets a clean home of its own.
+
+3)COPY requirements.txt .
+Copy only requirements.txt from your folder into /app (the . means “here”).
+
+4)RUN pip install --no-cache-dir -r requirements.txt
+Install all the packages from that list inside the container. --no-cache-dir skips pip’s download cache, which keeps the image smaller.
+Why: this replaces your .venv. The container gets its own Linux versions of the packages.
+
+5)Why copy requirements.txt first and the code later? Docker remembers (caches) each step. 
+If you change only main.py later, Docker sees that requirements.txt didn’t change and reuses the slow pip install step. 
+Rebuilds then take seconds instead of minutes.
+
+6)COPY . .
+Now copy all your code (main.py, health.py, config.yaml, ...) 
+into /app. The first . is your folder; the second . is /app.
+
+7)EXPOSE 8000
+A note saying “this app listens on port 8000”. 
+It’s documentation only; the actual door to Windows is opened by ports: in docker-compose.yml.
+
+8)So COPY . . means:
+
+“Copy everything from my project folder into /app in the container.”
+
+9)
