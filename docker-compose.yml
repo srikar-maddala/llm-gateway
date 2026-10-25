@@ -12,3 +12,12 @@ services:
       OLLAMA_API_BASE: http://host.docker.internal:11434
     depends_on:
       - redis
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - gateway
