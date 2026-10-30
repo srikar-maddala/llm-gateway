@@ -2,9 +2,7 @@ models:
   fast:
     provider: groq
     litellm_model: groq/openai/gpt-oss-20b
-    
-    fallbacks : [smart,local]
-
+    fallbacks: [smart, local]
 
   smart:
     provider: openai
