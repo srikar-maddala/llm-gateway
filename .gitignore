@@ -3,4 +3,4 @@
 .env
 #where your API keys will go. This is the important one, since keys pushed to GitHub get stolen quickly
 __pycache__/
-#compiled files Python generates automatically.
+#compiled files Python generates automatically.Reference.txt
