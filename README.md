@@ -175,6 +175,10 @@ Circuit breaker settings (`breaker.py`): at least **3** requests in the last 5 m
 | C. Groq + OpenAI down | 20/20 (100%) | local ×20 | 3946 ms | 18084 ms | spikes about every 30 s are the breaker's recovery checks |
 | D. Everything down | 0/20 | 502 ×20 | 12 ms | 19838 ms | once all breakers are open, each 502 returns in ≈ 10 ms |
 
+Close-up from a second Groq outage run: almost every request skips Groq instantly (`groq circuit_open`, green) and is answered by OpenAI (`openai ok`, yellow); only a few real calls to Groq fail (`groq server_error`, blue).
+
+<img src="docs/failover-panels.png" alt="Provider attempts and requests per minute during a Groq outage" width="420">
+
 **What this shows:**
 - **Failover works:** losing one or two cloud providers doesn't cost a single request.
 - **The breaker removes the outage penalty:** in scenario B, only the first 3 requests paid about 6 s; after that, Groq was skipped instantly.
