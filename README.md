@@ -247,4 +247,4 @@ Python 3.13 · FastAPI · LiteLLM · Redis (redis-py asyncio) · Prometheus (pro
 
 ## Author
 
-Built by **Srikar Maddala**, step by step, as a learning project. [LinkedIn](https://www.linkedin.com/in/your-profile) · [GitHub](https://github.com/srikar-maddala)
+Built by **Srikar Maddala**, step by step, as a learning project.    [LinkedIn](https://www.linkedin.com/in/srikar-maddala-123456/)· [GitHub](https://github.com/srikar-maddala)
